@@ -1,0 +1,61 @@
+{
+  "intents": [
+    {
+      "tag": "greeting",
+      "patterns": ["hi", "hello", "hey", "good morning", "good evening"],
+      "responses": [
+        "Hey! 👋 How can I help you today?",
+        "Hello! What can I do for you?"
+      ]
+    },
+    {
+      "tag": "about",
+      "patterns": [
+        "what is this",
+        "what can you do",
+        "who are you",
+        "tell me about this bot"
+      ],
+      "responses": [
+        "I’m a hybrid chatbot: I use intent matching for common questions and an LLM fallback for open-ended ones."
+      ]
+    },
+    {
+      "tag": "services",
+      "patterns": [
+        "what services do you offer",
+        "what can you help with",
+        "services",
+        "features"
+      ],
+      "responses": [
+        "I can answer FAQs, route requests by intent, and fall back to an LLM for open-ended questions."
+      ]
+    },
+    {
+      "tag": "hours",
+      "patterns": [
+        "what are your working hours",
+        "opening hours",
+        "when are you open",
+        "hours"
+      ],
+      "responses": ["We’re open Monday–Friday, 9am–5pm."]
+    },
+    {
+      "tag": "contact",
+      "patterns": [
+        "how do i contact support",
+        "contact",
+        "email",
+        "phone number"
+      ],
+      "responses": ["You can contact support at support@example.com."]
+    },
+    {
+      "tag": "goodbye",
+      "patterns": ["bye", "goodbye", "see you", "thank you bye"],
+      "responses": ["Bye! 👋 Good luck with your interview.", "See you later!"]
+    }
+  ]
+}
