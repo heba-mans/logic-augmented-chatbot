@@ -53,28 +53,33 @@ else:
     startup_banner = f"⚠️ Startup error:\n\n{msg}"
 
 
-def route_and_reply(message: str, threshold: float) -> str:
+def _details_line(text: str, show_debug: bool) -> str:
+    return f"\n\n`{text}`" if show_debug else ""
+
+
+def route_and_reply(message: str, threshold: float, show_debug: bool) -> str:
     if startup_banner:
         return startup_banner
 
     # 1) Rule layer (deterministic)
     rule = rules_reply(message)
     if rule:
-        return f"✅ **{rule}**\n\n`route: RULES`"
+        return f"✅ **{rule}**{_details_line('route: RULES', show_debug)}"
 
     # 2) Intent layer (semantic)
     match = intent_engine.match(message, threshold=threshold)
     if match["type"] == "intent":
-        return f"{match['text']}\n\n`route: INTENT • tag={match['tag']} • similarity={match['score']:.2f}`"
+        route_text = f"route: INTENT • tag={match['tag']} • similarity={match['score']:.2f}"
+        return f"{match['text']}{_details_line(route_text, show_debug)}"
 
     # 3) LLM fallback
     answer = llm_reply(message)
     if not USE_OPENAI:
         answer += "\n\n💡 Tip: Add `OPENAI_API_KEY` in a local `.env` to enable LLM fallback."
-    return f"{answer}\n\n`route: LLM FALLBACK`"
+    return f"{answer}{_details_line('route: LLM FALLBACK', show_debug)}"
 
 
-def chat_fn(message, history, threshold):
+def chat_fn(message, history, threshold, show_debug):
     """
     Gradio 'messages' format:
     history is a list of dicts like {"role": "user"/"assistant", "content": "..."}
@@ -82,7 +87,7 @@ def chat_fn(message, history, threshold):
     if history is None:
         history = []
 
-    reply = route_and_reply(message, threshold)
+    reply = route_and_reply(message, threshold, show_debug)
 
     history = history + [
         {"role": "user", "content": message},
@@ -134,7 +139,6 @@ with gr.Blocks(
     .message { max-width: 78% !important; }
     """,
 ) as demo:
-    # Header
     gr.Markdown(
         """
 # Logic-Augmented Chatbot
@@ -144,7 +148,6 @@ A polished demo app built for interview storytelling.
     )
 
     with gr.Row():
-        # Left panel: how it works + controls
         with gr.Column(scale=4):
             gr.Markdown(HOW_IT_WORKS_MD)
 
@@ -157,36 +160,29 @@ A polished demo app built for interview storytelling.
                 info="Higher = fewer intent matches, more LLM fallback. Lower = more intent matches.",
             )
 
+            show_debug = gr.Checkbox(
+                value=True,
+                label="Show routing details",
+                info="Turn off for a cleaner demo; turn on to show routing + similarity.",
+            )
+
             gr.Markdown(
                 f"**LLM status:** {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}"
             )
 
             clear_btn = gr.Button("🧹 Clear chat", variant="secondary")
 
-        # Right panel: chat UI
         with gr.Column(scale=8):
-            chatbot = gr.Chatbot(
-                label="Chat",
-                height=520,
-            )
+            chatbot = gr.Chatbot(label="Chat", height=520)
 
             with gr.Row():
-                msg = gr.Textbox(
-                    label="Message",
-                    placeholder="Type a message…",
-                    scale=10,
-                )
+                msg = gr.Textbox(label="Message", placeholder="Type a message…", scale=10)
                 send = gr.Button("Send", variant="primary", scale=2)
 
-            gr.Examples(
-                examples=EXAMPLES,
-                inputs=msg,
-                label="Try these examples",
-            )
+            gr.Examples(examples=EXAMPLES, inputs=msg, label="Try these examples")
 
-    # Events
-    send.click(chat_fn, inputs=[msg, chatbot, threshold], outputs=[chatbot, msg])
-    msg.submit(chat_fn, inputs=[msg, chatbot, threshold], outputs=[chatbot, msg])
+    send.click(chat_fn, inputs=[msg, chatbot, threshold, show_debug], outputs=[chatbot, msg])
+    msg.submit(chat_fn, inputs=[msg, chatbot, threshold, show_debug], outputs=[chatbot, msg])
     clear_btn.click(lambda: [], None, chatbot)
 
 if __name__ == "__main__":
