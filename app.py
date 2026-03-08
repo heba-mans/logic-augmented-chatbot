@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 
 import gradio as gr
 
@@ -106,29 +107,59 @@ def _details_line(text: str, show_debug: bool) -> str:
     # No backticks — avoids Gradio rendering as broken code blocks
     return f"\n\n_( {text} )_" if show_debug else ""
 
-def route_and_reply(message: str, threshold: float, show_debug: bool, system_prompt: str) -> str:
+
+def route_and_reply(
+    message: str,
+    threshold: float,
+    show_debug: bool,
+    system_prompt: str,
+    memory: dict,
+) -> tuple[str, dict]:
     if startup_banner:
-        return startup_banner
+        return startup_banner, memory
+
+    # ---- Memory rule: capture name ----
+    # Supports: "my name is Hiba", "I'm Hiba", "I am Hiba"
+    match_name = re.search(
+        r"\b(my name is|i am|i'm)\s+([A-Za-z][A-Za-z\-']{1,30})\b",
+        message.strip(),
+        re.IGNORECASE,
+    )
+    if match_name:
+        name = match_name.group(2)
+        memory = {**memory, "name": name}
+        return f"Nice to meet you, {name}! 👋", memory
 
     # 1) Rule layer (deterministic)
     rule = rules_reply(message)
     if rule:
-        return f"{rule}{_details_line('Route: RULES', show_debug)}"
+        return f"{rule}{_details_line('Route: RULES', show_debug)}", memory
 
     # 2) Intent layer (semantic)
     match = intent_engine.match(message, threshold=threshold)
     if match["type"] == "intent":
         route_text = f"Route: INTENT | tag={match['tag']} | similarity={match['score']:.2f}"
-        return f"{match['text']}{_details_line(route_text, show_debug)}"
+
+        reply_text = match["text"]
+        # Personalize greetings if we know the user's name
+        if memory.get("name") and match.get("tag") == "greeting":
+            reply_text = f"Hey {memory['name']}! 👋 How can I help you today?"
+
+        return f"{reply_text}{_details_line(route_text, show_debug)}", memory
 
     # 3) LLM fallback
     answer = llm_reply(message, system_prompt=system_prompt)
     if not USE_OPENAI:
         answer += "\n\n💡 Tip: Add OPENAI_API_KEY in a local .env to enable LLM fallback."
-    return f"{answer}{_details_line('Route: LLM FALLBACK', show_debug)}"
+    else:
+        # Optional personalization for LLM responses (subtle)
+        if memory.get("name"):
+            answer = f"{answer}"
+
+    return f"{answer}{_details_line('Route: LLM FALLBACK', show_debug)}", memory
 
 
-def chat_fn(message, history, threshold, show_debug, system_prompt):
+def chat_fn(message, history, threshold, show_debug, system_prompt, memory):
     """
     Gradio 'messages' format:
     history is a list of dicts like {"role": "user"/"assistant", "content": "..."}
@@ -136,20 +167,23 @@ def chat_fn(message, history, threshold, show_debug, system_prompt):
     if history is None:
         history = []
 
-    reply = route_and_reply(message, threshold, show_debug, system_prompt)
+    if memory is None:
+        memory = {"name": None}
+
+    reply, memory = route_and_reply(message, threshold, show_debug, system_prompt, memory)
 
     history = history + [
         {"role": "user", "content": message},
         {"role": "assistant", "content": reply},
     ]
-    return history, ""
+    return history, "", memory
 
 
 def reset_session(reset_prompt: bool):
-    """Clears the conversation. Optionally resets prompt to default."""
+    """Clears the conversation + clears memory. Optionally resets prompt to default."""
     if reset_prompt:
-        return [], "", DEFAULT_SYSTEM_PROMPT
-    return [], "", gr.update()  # keep current prompt
+        return [], "", DEFAULT_SYSTEM_PROMPT, {"name": None}
+    return [], "", gr.update(), {"name": None}  # keep current prompt, reset memory
 
 
 HOW_IT_WORKS_MD = f"""
@@ -175,12 +209,15 @@ This demo routes each message through three layers:
 """.strip()
 
 EXAMPLES = [
+    "My name is Hiba",
     "Hello",
     "What are your working hours?",
     "How do I contact support?",
     "Where are you located?",
     "Explain what this chatbot does",
     "Give me a short summary of transformers in NLP",
+    "Are you open now?",
+    "Are you open today?",
 ]
 
 DESCRIPTION = "Hybrid routing: rules → semantic intent matching → LLM fallback"
@@ -196,6 +233,9 @@ Hybrid routing: rules → semantic intent matching → LLM fallback
 A polished demo app built for interview storytelling.
 """.strip()
     )
+
+    # Session memory (per browser session)
+    memory = gr.State({"name": None})
 
     with gr.Row():
         # Left panel
@@ -243,10 +283,22 @@ A polished demo app built for interview storytelling.
             gr.Examples(examples=EXAMPLES, inputs=msg, label="Try these examples")
 
     # Events
-    send.click(chat_fn, inputs=[msg, chatbot, threshold, show_debug, system_prompt], outputs=[chatbot, msg])
-    msg.submit(chat_fn, inputs=[msg, chatbot, threshold, show_debug, system_prompt], outputs=[chatbot, msg])
+    send.click(
+        chat_fn,
+        inputs=[msg, chatbot, threshold, show_debug, system_prompt, memory],
+        outputs=[chatbot, msg, memory]
+    )
+    msg.submit(
+        chat_fn,
+        inputs=[msg, chatbot, threshold, show_debug, system_prompt, memory],
+        outputs=[chatbot, msg, memory]
+    )
 
-    reset_btn.click(reset_session, inputs=[reset_prompt], outputs=[chatbot, msg, system_prompt])
+    reset_btn.click(
+        reset_session,
+        inputs=[reset_prompt],
+        outputs=[chatbot, msg, system_prompt, memory]
+    )
 
 if __name__ == "__main__":
     demo.launch(inbrowser=True, css=APP_CSS)
