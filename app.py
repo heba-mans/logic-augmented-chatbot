@@ -31,7 +31,6 @@ def validate_intents_file(path: Path) -> tuple[bool, str]:
     return True, "OK"
 
 
-# -------- Startup checks --------
 ok, msg = validate_intents_file(INTENTS_PATH)
 
 intent_engine = None
@@ -45,52 +44,131 @@ if ok:
             "⚠️ Startup error: failed to load the embedding model or intent engine.\n\n"
             f"Error: {e}\n\n"
             "Fix:\n"
-            "- Check your internet connection (first run downloads model)\n"
-            "- Recreate venv and reinstall requirements\n"
+            "- Check internet connection (first run downloads model)\n"
+            "- Recreate venv + reinstall requirements\n"
             "- Run: python app.py from repo root"
         )
 else:
     startup_banner = f"⚠️ Startup error:\n\n{msg}"
 
 
-def chat_fn(message, history):
-    # If startup failed, return the banner instead of crashing
+def route_and_reply(message: str, threshold: float):
     if startup_banner:
         return startup_banner
 
-    # 1) Deterministic rule layer
+    # 1) Rule layer
     rule = rules_reply(message)
     if rule:
-        return f"{rule}\n\n_(route: rules)_"
+        return f"✅ **{rule}**\n\n`route: RULES`"
 
-    # 2) Intent matching layer
-    match = intent_engine.match(message, threshold=0.70)
+    # 2) Intent layer
+    match = intent_engine.match(message, threshold=threshold)
     if match["type"] == "intent":
-        return f'{match["text"]}\n\n_(route: intent={match["tag"]}, similarity: {match["score"]:.2f})_'
+        return f"{match['text']}\n\n`route: INTENT • tag={match['tag']} • similarity={match['score']:.2f}`"
 
     # 3) LLM fallback
     answer = llm_reply(message)
     if not USE_OPENAI:
-        answer += "\n\nTip: Add OPENAI_API_KEY in a local `.env` to enable LLM fallback."
-    return f"{answer}\n\n_(route: LLM fallback)_"
+        answer += "\n\n💡 Tip: Add `OPENAI_API_KEY` in a local `.env` to enable LLM fallback."
+    return f"{answer}\n\n`route: LLM FALLBACK`"
 
 
-description = "Hybrid routing: rules → semantic intent matching → LLM fallback"
-if not USE_OPENAI:
-    description += "  •  (LLM fallback disabled: no OPENAI_API_KEY)"
+def chat_fn(message, history, threshold):
+    reply = route_and_reply(message, threshold)
 
-demo = gr.ChatInterface(
-    fn=chat_fn,
-    title="Logic-Augmented Chatbot",
-    description=description,
-    examples=[
-        "Hello",
-        "What are your working hours?",
-        "How do I contact support?",
-        "Where are you located?",
-        "Explain what this chatbot does",
-    ],
-)
+    # Gradio "messages" format: list of {"role": "...", "content": "..."}
+    if history is None:
+        history = []
+
+    history = history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": reply},
+    ]
+    return history, ""
+
+
+HOW_IT_WORKS_MD = f"""
+### How it works (Hybrid Routing)
+
+This demo routes each message through three layers:
+
+1. **Rules (deterministic)**  
+   Fast, reliable answers for structured questions (hours, contact, location).
+
+2. **Semantic Intent Matching**  
+   Uses **SentenceTransformers** embeddings to match user input to intent patterns in `data/intents.json`.
+
+3. **LLM Fallback**  
+   For open-ended prompts, the system optionally calls an LLM.  
+   **Status:** {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
+
+---
+
+### What to say in an interview (30 seconds)
+
+> “I built a hybrid chatbot that combines deterministic rule routing, semantic intent classification using embeddings, and an LLM fallback for open-ended queries. The routing logic is transparent, adjustable via a confidence threshold, and packaged as a reproducible app.”
+
+"""
+
+EXAMPLES = [
+    "Hello",
+    "What are your working hours?",
+    "How do I contact support?",
+    "Where are you located?",
+    "Explain what this chatbot does",
+    "Give me a short summary of transformers in NLP",
+]
+
+
+with gr.Blocks(title="Logic-Augmented Chatbot") as demo:
+    # Header
+    gr.Markdown(
+        """
+# Logic-Augmented Chatbot
+**Hybrid routing:** rules → semantic intent matching → LLM fallback  
+A polished demo app built for interview storytelling.
+""".strip()
+    )
+
+    with gr.Row():
+        # Left panel: How it works + controls
+        with gr.Column(scale=4):
+            gr.Markdown(HOW_IT_WORKS_MD)
+
+            threshold = gr.Slider(
+                minimum=0.50,
+                maximum=0.90,
+                value=0.70,
+                step=0.01,
+                label="Intent confidence threshold",
+                info="Higher = fewer intent matches, more LLM fallback. Lower = more intent matches."
+            )
+
+            clear_btn = gr.Button("🧹 Clear chat", variant="secondary")
+
+        # Right panel: Chat UI
+        with gr.Column(scale=8):
+            chatbot = gr.Chatbot(label="Chat", height=520)
+
+            with gr.Row():
+                msg = gr.Textbox(
+                    label="Message",
+                    placeholder="Type a message…",
+                    scale=10
+                )
+                send = gr.Button("Send", variant="primary", scale=2)
+
+            gr.Examples(
+                examples=EXAMPLES,
+                inputs=msg,
+                label="Try these examples"
+            )
+
+    # Events
+    send.click(chat_fn, inputs=[msg, chatbot, threshold], outputs=[chatbot, msg])
+    msg.submit(chat_fn, inputs=[msg, chatbot, threshold], outputs=[chatbot, msg])
+
+    clear_btn.click(lambda: [], None, chatbot)
 
 if __name__ == "__main__":
     demo.launch(inbrowser=True)
