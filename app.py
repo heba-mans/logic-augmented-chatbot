@@ -1,22 +1,30 @@
-import traceback
-try:
-    print(">>> app.py reached top", flush=True)
-except Exception:
-    pass
-
-from pathlib import Path
-import json
-
-from chatbot.intent_engine import IntentEngine
-from chatbot.llm_engine import USE_OPENAI
-from chatbot.router import route_and_reply, format_footer
-
 import os
+import sys
+import traceback
+import faulthandler
 
+# Ensure logs appear in HF container logs immediately
 os.environ["PYTHONUNBUFFERED"] = "1"
-print(">>> app.py starting", flush=True)
+faulthandler.enable(all_threads=True)
 
-import gradio as gr
+print(">>> app.py: reached top of file", flush=True)
+
+try:
+    from pathlib import Path
+    import json
+    import gradio as gr
+
+    # IMPORTANT: import your ML modules AFTER the first print
+    from chatbot.intent_engine import IntentEngine
+    from chatbot.llm_engine import USE_OPENAI
+    from chatbot.router import route_and_reply, format_footer
+
+    print(">>> app.py: imports successful", flush=True)
+
+except Exception:
+    print(">>> app.py: CRASH DURING IMPORT", flush=True)
+    traceback.print_exc()
+    sys.exit(1)
 
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
@@ -262,4 +270,4 @@ A polished demo app built for interview storytelling.
 
 if __name__ == "__main__":
     demo.queue()
-    demo.launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS)
+    demo.launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, ssr_mode=False)
