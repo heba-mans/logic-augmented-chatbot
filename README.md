@@ -1,3 +1,13 @@
+---
+title: Logic-Augmented Chatbot
+emoji: 🤖
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 # Logic-Augmented Chatbot
 
 Logic-augmented chatbot with deterministic rules, semantic intent routing, and optional LLM fallback.
