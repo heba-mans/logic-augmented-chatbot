@@ -82,7 +82,6 @@ div[class*="icon-button-wrapper"][class*="top-panel"] {
 def validate_intents_file(path: Path) -> tuple[bool, str]:
     if not path.exists():
         return False, f"Missing file: {path}\n\nFix: create data/intents.json (see README)."
-
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
@@ -95,7 +94,6 @@ def validate_intents_file(path: Path) -> tuple[bool, str]:
             "Example:\n"
             '{ "intents": [ { "tag": "greeting", "patterns": ["hi"], "responses": ["hello"] } ] }'
         )
-
     return True, "OK"
 
 
@@ -136,7 +134,6 @@ def chat_fn(message, history, threshold, demo_mode, system_prompt, memory):
         startup_banner=startup_banner,
     )
 
-    # Demo Mode adds explainability footer (clean UX by default)
     if demo_mode:
         reply = f"{reply}\n\n_( {format_footer(meta)} )_"
 
@@ -148,10 +145,9 @@ def chat_fn(message, history, threshold, demo_mode, system_prompt, memory):
 
 
 def reset_session(reset_prompt: bool):
-    """Clears the conversation + clears memory. Optionally resets prompt to default."""
     if reset_prompt:
         return [], "", DEFAULT_SYSTEM_PROMPT, {"name": None}
-    return [], "", gr.update(), {"name": None}  # keep current prompt, reset memory
+    return [], "", gr.update(), {"name": None}
 
 
 HOW_IT_WORKS_MD = f"""
@@ -168,12 +164,6 @@ This demo routes each message through three layers:
 3. LLM Fallback  
    For open-ended prompts, the system optionally calls an LLM.  
    Status: {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
-
----
-
-### Interview talk-track (30 seconds)
-
-> “I built a hybrid chatbot that combines deterministic rule routing, semantic intent classification using embeddings, and an LLM fallback for open-ended queries. The routing logic is transparent, adjustable via a confidence threshold, and packaged as a reproducible app.”
 """.strip()
 
 EXAMPLES = [
@@ -188,10 +178,6 @@ EXAMPLES = [
     "Are you open today?",
 ]
 
-DESCRIPTION = "Hybrid routing: rules → semantic intent matching → LLM fallback"
-if not USE_OPENAI:
-    DESCRIPTION += "  •  (LLM fallback disabled: no OPENAI_API_KEY)"
-
 
 with gr.Blocks(title="Logic-Augmented Chatbot") as demo:
     gr.Markdown(
@@ -202,11 +188,9 @@ A polished demo app built for interview storytelling.
 """.strip()
     )
 
-    # Session memory (per browser session)
     memory = gr.State({"name": None})
 
     with gr.Row():
-        # Left panel
         with gr.Column(scale=4):
             gr.Markdown(HOW_IT_WORKS_MD)
 
@@ -225,9 +209,7 @@ A polished demo app built for interview storytelling.
                 info="Off = clean replies. On = adds explainability footer.",
             )
 
-            gr.Markdown(
-                f"LLM status: {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}"
-            )
+            gr.Markdown(f"LLM status: {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}")
 
             with gr.Accordion("System prompt (LLM)", open=False):
                 system_prompt = gr.Textbox(
@@ -240,7 +222,6 @@ A polished demo app built for interview storytelling.
             reset_prompt = gr.Checkbox(value=False, label="Reset prompt to default on reset")
             reset_btn = gr.Button("🔄 Reset conversation", variant="secondary")
 
-        # Right panel
         with gr.Column(scale=8):
             chatbot = gr.Chatbot(label="Chat", height=520)
 
@@ -250,24 +231,12 @@ A polished demo app built for interview storytelling.
 
             gr.Examples(examples=EXAMPLES, inputs=msg, label="Try these examples")
 
-    # Events
-    send.click(
-        chat_fn,
-        inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory],
-        outputs=[chatbot, msg, memory]
-    )
-    msg.submit(
-        chat_fn,
-        inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory],
-        outputs=[chatbot, msg, memory]
-    )
+    send.click(chat_fn, inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory], outputs=[chatbot, msg, memory])
+    msg.submit(chat_fn, inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory], outputs=[chatbot, msg, memory])
 
-    reset_btn.click(
-        reset_session,
-        inputs=[reset_prompt],
-        outputs=[chatbot, msg, system_prompt, memory]
-    )
+    reset_btn.click(reset_session, inputs=[reset_prompt], outputs=[chatbot, msg, system_prompt, memory])
 
-print(">>> launching gradio", flush=True)
-demo.queue()
-demo.launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, ssr_mode=False)
+if __name__ == "__main__":
+    demo.queue()
+    # IMPORTANT: disable SSR to avoid the asyncio file descriptor errors you saw in logs
+    demo.launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, ssr_mode=False)
