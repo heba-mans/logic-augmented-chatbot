@@ -1,15 +1,16 @@
 from pathlib import Path
 import json
 
-import gradio as gr
-
 from chatbot.intent_engine import IntentEngine
 from chatbot.llm_engine import USE_OPENAI
 from chatbot.router import route_and_reply, format_footer
 
 import os
+
 os.environ["PYTHONUNBUFFERED"] = "1"
 print(">>> app.py starting", flush=True)
+
+import gradio as gr
 
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
