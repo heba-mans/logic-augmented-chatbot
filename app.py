@@ -7,6 +7,10 @@ from chatbot.intent_engine import IntentEngine
 from chatbot.llm_engine import USE_OPENAI
 from chatbot.router import route_and_reply, format_footer
 
+import os
+os.environ["PYTHONUNBUFFERED"] = "1"
+print(">>> app.py starting", flush=True)
+
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
 
@@ -88,7 +92,9 @@ startup_banner = None
 
 if ok:
     try:
+        print(">>> loading IntentEngine", flush=True)
         intent_engine = IntentEngine(INTENTS_PATH)
+        print(">>> IntentEngine loaded", flush=True)
     except Exception as e:
         startup_banner = (
             "⚠️ Startup error: failed to load the embedding model or intent engine.\n\n"
