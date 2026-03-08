@@ -1,13 +1,11 @@
 from pathlib import Path
 import json
-import re
 
 import gradio as gr
 
 from chatbot.intent_engine import IntentEngine
-from chatbot.llm_engine import llm_reply, USE_OPENAI
-from chatbot.rules_engine import rules_reply
-from chatbot.router import route_and_reply
+from chatbot.llm_engine import USE_OPENAI
+from chatbot.router import route_and_reply, format_footer
 
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
@@ -104,23 +102,22 @@ else:
     startup_banner = f"⚠️ Startup error:\n\n{msg}"
 
 
-def _details_line(text: str, show_debug: bool) -> str:
-    # No backticks — avoids Gradio rendering as broken code blocks
-    return f"\n\n_( {text} )_" if show_debug else ""
-
-def chat_fn(message, history, threshold, show_debug, system_prompt, memory):
+def chat_fn(message, history, threshold, demo_mode, system_prompt, memory):
     if history is None:
         history = []
 
-    reply, memory = route_and_reply(
+    reply, memory, meta = route_and_reply(
         message,
         intent_engine=intent_engine,
         threshold=threshold,
-        show_debug=show_debug,
         system_prompt=system_prompt,
         memory=memory,
         startup_banner=startup_banner,
     )
+
+    # Demo Mode adds explainability footer (clean UX by default)
+    if demo_mode:
+        reply = f"{reply}\n\n_( {format_footer(meta)} )_"
 
     history = history + [
         {"role": "user", "content": message},
@@ -201,10 +198,10 @@ A polished demo app built for interview storytelling.
                 info="Higher = fewer intent matches, more LLM fallback. Lower = more intent matches.",
             )
 
-            show_debug = gr.Checkbox(
+            demo_mode = gr.Checkbox(
                 value=False,
-                label="Show routing details",
-                info="Turn on to show routing + similarity."
+                label="Demo Mode (show routing + confidence)",
+                info="Off = clean replies. On = adds explainability footer.",
             )
 
             gr.Markdown(
@@ -235,12 +232,12 @@ A polished demo app built for interview storytelling.
     # Events
     send.click(
         chat_fn,
-        inputs=[msg, chatbot, threshold, show_debug, system_prompt, memory],
+        inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory],
         outputs=[chatbot, msg, memory]
     )
     msg.submit(
         chat_fn,
-        inputs=[msg, chatbot, threshold, show_debug, system_prompt, memory],
+        inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory],
         outputs=[chatbot, msg, memory]
     )
 
