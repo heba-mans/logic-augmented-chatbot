@@ -10,6 +10,55 @@ from chatbot.rules_engine import rules_reply
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
 
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant for a chatbot demo. "
+    "Be concise, friendly, and practical. If the user asks about the project, "
+    "explain that it uses rules, semantic intent matching, and an LLM fallback."
+)
+
+# CSS must be passed to launch() in Gradio 6+
+APP_CSS = """
+/* Make bubbles look normal */
+.message { max-width: 72% !important; }
+
+/* User bubble (right) */
+.message-row.user-row .message {
+  margin-left: auto !important;
+  max-width: 48% !important;
+  min-width: 260px !important;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+}
+
+/* Bot bubble (left) - wider so it doesn't wrap every word */
+.message-row.bot-row .message {
+  margin-right: auto !important;
+  max-width: 62% !important;
+  min-width: 340px !important;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+}
+
+/* Text behavior */
+.message-content {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  line-height: 1.35 !important;
+  font-size: 15px !important;
+}
+
+/* Hide the weird Gradio action overlays (from your HTML) */
+div[class*="message-buttons-right"],
+div[class*="message-buttons-left"],
+div[class*="message-buttons"][class*="bubble"],
+div[class*="icon-button-wrapper"][class*="top-panel"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+"""
+
 
 def validate_intents_file(path: Path) -> tuple[bool, str]:
     if not path.exists():
@@ -54,32 +103,32 @@ else:
 
 
 def _details_line(text: str, show_debug: bool) -> str:
-    return f"\n\n`{text}`" if show_debug else ""
+    # No backticks — avoids Gradio rendering as broken code blocks
+    return f"\n\n_( {text} )_" if show_debug else ""
 
-
-def route_and_reply(message: str, threshold: float, show_debug: bool) -> str:
+def route_and_reply(message: str, threshold: float, show_debug: bool, system_prompt: str) -> str:
     if startup_banner:
         return startup_banner
 
     # 1) Rule layer (deterministic)
     rule = rules_reply(message)
     if rule:
-        return f"✅ **{rule}**{_details_line('route: RULES', show_debug)}"
+        return f"{rule}{_details_line('Route: RULES', show_debug)}"
 
     # 2) Intent layer (semantic)
     match = intent_engine.match(message, threshold=threshold)
     if match["type"] == "intent":
-        route_text = f"route: INTENT • tag={match['tag']} • similarity={match['score']:.2f}"
+        route_text = f"Route: INTENT | tag={match['tag']} | similarity={match['score']:.2f}"
         return f"{match['text']}{_details_line(route_text, show_debug)}"
 
     # 3) LLM fallback
-    answer = llm_reply(message)
+    answer = llm_reply(message, system_prompt=system_prompt)
     if not USE_OPENAI:
-        answer += "\n\n💡 Tip: Add `OPENAI_API_KEY` in a local `.env` to enable LLM fallback."
-    return f"{answer}{_details_line('route: LLM FALLBACK', show_debug)}"
+        answer += "\n\n💡 Tip: Add OPENAI_API_KEY in a local .env to enable LLM fallback."
+    return f"{answer}{_details_line('Route: LLM FALLBACK', show_debug)}"
 
 
-def chat_fn(message, history, threshold, show_debug):
+def chat_fn(message, history, threshold, show_debug, system_prompt):
     """
     Gradio 'messages' format:
     history is a list of dicts like {"role": "user"/"assistant", "content": "..."}
@@ -87,7 +136,7 @@ def chat_fn(message, history, threshold, show_debug):
     if history is None:
         history = []
 
-    reply = route_and_reply(message, threshold, show_debug)
+    reply = route_and_reply(message, threshold, show_debug, system_prompt)
 
     history = history + [
         {"role": "user", "content": message},
@@ -96,20 +145,27 @@ def chat_fn(message, history, threshold, show_debug):
     return history, ""
 
 
+def reset_session(reset_prompt: bool):
+    """Clears the conversation. Optionally resets prompt to default."""
+    if reset_prompt:
+        return [], "", DEFAULT_SYSTEM_PROMPT
+    return [], "", gr.update()  # keep current prompt
+
+
 HOW_IT_WORKS_MD = f"""
 ### How it works (Hybrid Routing)
 
 This demo routes each message through three layers:
 
-1. **Rules (deterministic)**  
+1. Rules (deterministic)  
    Fast, reliable answers for structured questions (hours, contact, location).
 
-2. **Semantic Intent Matching**  
-   Uses **SentenceTransformers** embeddings to match user input to intent patterns in `data/intents.json`.
+2. Semantic Intent Matching  
+   Uses SentenceTransformers embeddings to match user input to intent patterns in data/intents.json.
 
-3. **LLM Fallback**  
+3. LLM Fallback  
    For open-ended prompts, the system optionally calls an LLM.  
-   **Status:** {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
+   Status: {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
 
 ---
 
@@ -132,22 +188,17 @@ if not USE_OPENAI:
     DESCRIPTION += "  •  (LLM fallback disabled: no OPENAI_API_KEY)"
 
 
-with gr.Blocks(
-    title="Logic-Augmented Chatbot",
-    css="""
-    /* Make chat bubbles a bit narrower for a more polished look */
-    .message { max-width: 78% !important; }
-    """,
-) as demo:
+with gr.Blocks(title="Logic-Augmented Chatbot") as demo:
     gr.Markdown(
         """
 # Logic-Augmented Chatbot
-**Hybrid routing:** rules → semantic intent matching → LLM fallback  
+Hybrid routing: rules → semantic intent matching → LLM fallback  
 A polished demo app built for interview storytelling.
 """.strip()
     )
 
     with gr.Row():
+        # Left panel
         with gr.Column(scale=4):
             gr.Markdown(HOW_IT_WORKS_MD)
 
@@ -161,29 +212,41 @@ A polished demo app built for interview storytelling.
             )
 
             show_debug = gr.Checkbox(
-                value=True,
+                value=False,
                 label="Show routing details",
-                info="Turn off for a cleaner demo; turn on to show routing + similarity.",
+                info="Turn on to show routing + similarity."
             )
 
             gr.Markdown(
-                f"**LLM status:** {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}"
+                f"LLM status: {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}"
             )
 
-            clear_btn = gr.Button("🧹 Clear chat", variant="secondary")
+            with gr.Accordion("System prompt (LLM)", open=False):
+                system_prompt = gr.Textbox(
+                    value=DEFAULT_SYSTEM_PROMPT,
+                    lines=6,
+                    label="System prompt",
+                    placeholder="Controls assistant behavior for LLM fallback.",
+                )
 
+            reset_prompt = gr.Checkbox(value=False, label="Reset prompt to default on reset")
+            reset_btn = gr.Button("🔄 Reset conversation", variant="secondary")
+
+        # Right panel
         with gr.Column(scale=8):
             chatbot = gr.Chatbot(label="Chat", height=520)
 
             with gr.Row():
-                msg = gr.Textbox(label="Message", placeholder="Type a message…", scale=10)
+                msg = gr.Textbox(label=None, placeholder="Type a message…", scale=10)
                 send = gr.Button("Send", variant="primary", scale=2)
 
             gr.Examples(examples=EXAMPLES, inputs=msg, label="Try these examples")
 
-    send.click(chat_fn, inputs=[msg, chatbot, threshold, show_debug], outputs=[chatbot, msg])
-    msg.submit(chat_fn, inputs=[msg, chatbot, threshold, show_debug], outputs=[chatbot, msg])
-    clear_btn.click(lambda: [], None, chatbot)
+    # Events
+    send.click(chat_fn, inputs=[msg, chatbot, threshold, show_debug, system_prompt], outputs=[chatbot, msg])
+    msg.submit(chat_fn, inputs=[msg, chatbot, threshold, show_debug, system_prompt], outputs=[chatbot, msg])
+
+    reset_btn.click(reset_session, inputs=[reset_prompt], outputs=[chatbot, msg, system_prompt])
 
 if __name__ == "__main__":
-    demo.launch(inbrowser=True)
+    demo.launch(inbrowser=True, css=APP_CSS)
