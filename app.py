@@ -1,3 +1,9 @@
+import traceback
+try:
+    print(">>> app.py reached top", flush=True)
+except Exception:
+    pass
+
 from pathlib import Path
 import json
 
