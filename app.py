@@ -7,6 +7,7 @@ import gradio as gr
 from chatbot.intent_engine import IntentEngine
 from chatbot.llm_engine import llm_reply, USE_OPENAI
 from chatbot.rules_engine import rules_reply
+from chatbot.router import route_and_reply
 
 BASE_DIR = Path(__file__).resolve().parent
 INTENTS_PATH = BASE_DIR / "data" / "intents.json"
@@ -107,70 +108,19 @@ def _details_line(text: str, show_debug: bool) -> str:
     # No backticks — avoids Gradio rendering as broken code blocks
     return f"\n\n_( {text} )_" if show_debug else ""
 
-
-def route_and_reply(
-    message: str,
-    threshold: float,
-    show_debug: bool,
-    system_prompt: str,
-    memory: dict,
-) -> tuple[str, dict]:
-    if startup_banner:
-        return startup_banner, memory
-
-    # ---- Memory rule: capture name ----
-    # Supports: "my name is Hiba", "I'm Hiba", "I am Hiba"
-    match_name = re.search(
-        r"\b(my name is|i am|i'm)\s+([A-Za-z][A-Za-z\-']{1,30})\b",
-        message.strip(),
-        re.IGNORECASE,
-    )
-    if match_name:
-        name = match_name.group(2)
-        memory = {**memory, "name": name}
-        return f"Nice to meet you, {name}! 👋", memory
-
-    # 1) Rule layer (deterministic)
-    rule = rules_reply(message)
-    if rule:
-        return f"{rule}{_details_line('Route: RULES', show_debug)}", memory
-
-    # 2) Intent layer (semantic)
-    match = intent_engine.match(message, threshold=threshold)
-    if match["type"] == "intent":
-        route_text = f"Route: INTENT | tag={match['tag']} | similarity={match['score']:.2f}"
-
-        reply_text = match["text"]
-        # Personalize greetings if we know the user's name
-        if memory.get("name") and match.get("tag") == "greeting":
-            reply_text = f"Hey {memory['name']}! 👋 How can I help you today?"
-
-        return f"{reply_text}{_details_line(route_text, show_debug)}", memory
-
-    # 3) LLM fallback
-    answer = llm_reply(message, system_prompt=system_prompt)
-    if not USE_OPENAI:
-        answer += "\n\n💡 Tip: Add OPENAI_API_KEY in a local .env to enable LLM fallback."
-    else:
-        # Optional personalization for LLM responses (subtle)
-        if memory.get("name"):
-            answer = f"{answer}"
-
-    return f"{answer}{_details_line('Route: LLM FALLBACK', show_debug)}", memory
-
-
 def chat_fn(message, history, threshold, show_debug, system_prompt, memory):
-    """
-    Gradio 'messages' format:
-    history is a list of dicts like {"role": "user"/"assistant", "content": "..."}
-    """
     if history is None:
         history = []
 
-    if memory is None:
-        memory = {"name": None}
-
-    reply, memory = route_and_reply(message, threshold, show_debug, system_prompt, memory)
+    reply, memory = route_and_reply(
+        message,
+        intent_engine=intent_engine,
+        threshold=threshold,
+        show_debug=show_debug,
+        system_prompt=system_prompt,
+        memory=memory,
+        startup_banner=startup_banner,
+    )
 
     history = history + [
         {"role": "user", "content": message},
