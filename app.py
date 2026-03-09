@@ -37,6 +37,50 @@ DEFAULT_SYSTEM_PROMPT = (
 
 # CSS must be passed to launch() in Gradio 6+
 APP_CSS = """
+/* ====== Global polish ====== */
+:root {
+  --card-bg: rgba(255,255,255,0.04);
+  --card-border: rgba(255,255,255,0.10);
+  --muted: rgba(255,255,255,0.68);
+}
+
+.gradio-container {
+  max-width: 1180px !important;
+  margin: 0 auto !important;
+}
+
+/* Header */
+#app-title h1 { margin-bottom: 6px !important; }
+#app-subtitle { color: var(--muted) !important; margin-top: 0 !important; }
+
+/* Cards */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 14px 14px;
+  margin-bottom: 12px;
+}
+
+/* Chips */
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin: 10px 0 16px 0; }
+.chip {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85);
+}
+
+/* Chat shell */
+.chat-shell {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 18px;
+  padding: 12px;
+}
+
 /* Make bubbles look normal */
 .message { max-width: 72% !important; }
 
@@ -65,6 +109,11 @@ APP_CSS = """
   overflow-wrap: normal !important;
   line-height: 1.35 !important;
   font-size: 15px !important;
+}
+
+/* Inputs */
+textarea, input {
+  border-radius: 14px !important;
 }
 
 /* Hide the weird Gradio action overlays (from your HTML) */
@@ -155,15 +204,22 @@ HOW_IT_WORKS_MD = f"""
 
 This demo routes each message through three layers:
 
-1. Rules (deterministic)  
+1. **Rules (deterministic)**  
    Fast, reliable answers for structured questions (hours, contact, location).
 
-2. Semantic Intent Matching  
-   Uses SentenceTransformers embeddings to match user input to intent patterns in data/intents.json.
+2. **Semantic Intent Matching**  
+   Uses SentenceTransformers embeddings to match user input to intent patterns in `data/intents.json`.
 
-3. LLM Fallback  
+3. **LLM Fallback**  
    For open-ended prompts, the system optionally calls an LLM.  
-   Status: {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
+   **Status:** {"✅ Enabled" if USE_OPENAI else "⚠️ Disabled (no OPENAI_API_KEY)"}.
+""".strip()
+
+TALK_TRACK_MD = """
+### Interview talk-track (30 seconds)
+
+> “I built a hybrid chatbot that combines deterministic rule routing, semantic intent classification using embeddings, and an LLM fallback for open-ended queries.
+> The routing logic is transparent, adjustable via a confidence threshold, and packaged as a reproducible app.”
 """.strip()
 
 EXAMPLES = [
@@ -180,56 +236,77 @@ EXAMPLES = [
 
 
 with gr.Blocks(title="Logic-Augmented Chatbot") as demo:
+    # Premium header + chips
     gr.Markdown(
-        """
+        f"""
+<div id="app-title">
+
 # Logic-Augmented Chatbot
-Hybrid routing: rules → semantic intent matching → LLM fallback  
-A polished demo app built for interview storytelling.
+
+</div>
+
+<div id="app-subtitle">
+Hybrid routing that feels like a product: <b>rules → semantic intent → LLM fallback</b>.
+</div>
+
+<div class="chips">
+  <div class="chip">✅ Rules</div>
+  <div class="chip">🧠 Intent Routing</div>
+  <div class="chip">📝 Memory</div>
+  <div class="chip">🤖 LLM: {"Enabled" if USE_OPENAI else "Disabled"}</div>
+</div>
 """.strip()
     )
 
     memory = gr.State({"name": None})
 
     with gr.Row():
+        # Left panel
         with gr.Column(scale=4):
-            gr.Markdown(HOW_IT_WORKS_MD)
+            gr.Markdown(f'<div class="card">{HOW_IT_WORKS_MD}</div>')
+            gr.Markdown(f'<div class="card">{TALK_TRACK_MD}</div>')
 
-            threshold = gr.Slider(
-                minimum=0.50,
-                maximum=0.90,
-                value=0.70,
-                step=0.01,
-                label="Intent confidence threshold",
-                info="Higher = fewer intent matches, more LLM fallback. Lower = more intent matches.",
-            )
-
-            demo_mode = gr.Checkbox(
-                value=False,
-                label="Demo Mode (show routing + confidence)",
-                info="Off = clean replies. On = adds explainability footer.",
-            )
-
-            gr.Markdown(f"LLM status: {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}")
-
-            with gr.Accordion("System prompt (LLM)", open=False):
-                system_prompt = gr.Textbox(
-                    value=DEFAULT_SYSTEM_PROMPT,
-                    lines=6,
-                    label="System prompt",
-                    placeholder="Controls assistant behavior for LLM fallback.",
+            with gr.Group():
+                threshold = gr.Slider(
+                    minimum=0.50,
+                    maximum=0.90,
+                    value=0.70,
+                    step=0.01,
+                    label="Intent confidence threshold",
+                    info="Higher = fewer intent matches, more LLM fallback. Lower = more intent matches.",
                 )
 
-            reset_prompt = gr.Checkbox(value=False, label="Reset prompt to default on reset")
-            reset_btn = gr.Button("🔄 Reset conversation", variant="secondary")
+                demo_mode = gr.Checkbox(
+                    value=False,
+                    label="Demo Mode (show routing + confidence)",
+                    info="Off = clean replies. On = adds explainability footer.",
+                )
 
+                gr.Markdown(f"**LLM status:** {'✅ enabled' if USE_OPENAI else '⚠️ disabled (no OPENAI_API_KEY)'}")
+
+                with gr.Accordion("System prompt (LLM)", open=False):
+                    system_prompt = gr.Textbox(
+                        value=DEFAULT_SYSTEM_PROMPT,
+                        lines=6,
+                        label="System prompt",
+                        placeholder="Controls assistant behavior for LLM fallback.",
+                    )
+
+                reset_prompt = gr.Checkbox(value=False, label="Reset prompt to default on reset")
+                reset_btn = gr.Button("🔄 Reset conversation", variant="secondary")
+
+        # Right panel
         with gr.Column(scale=8):
+            gr.Markdown('<div class="chat-shell">')
             chatbot = gr.Chatbot(label="Chat", height=520)
+            gr.Markdown("</div>")
 
             with gr.Row():
                 msg = gr.Textbox(label=None, placeholder="Type a message…", scale=10)
                 send = gr.Button("Send", variant="primary", scale=2)
 
-            gr.Examples(examples=EXAMPLES, inputs=msg, label="Try these examples")
+            with gr.Accordion("Try these examples", open=False):
+                gr.Examples(examples=EXAMPLES, inputs=msg, label=None)
 
     send.click(chat_fn, inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory], outputs=[chatbot, msg, memory])
     msg.submit(chat_fn, inputs=[msg, chatbot, threshold, demo_mode, system_prompt, memory], outputs=[chatbot, msg, memory])
@@ -238,5 +315,4 @@ A polished demo app built for interview storytelling.
 
 if __name__ == "__main__":
     demo.queue()
-    # IMPORTANT: disable SSR to avoid the asyncio file descriptor errors you saw in logs
     demo.launch(server_name="0.0.0.0", server_port=7860, css=APP_CSS, ssr_mode=False)
